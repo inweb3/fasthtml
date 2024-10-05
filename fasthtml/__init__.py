@@ -1,6 +1,2 @@
-__version__ = "0.1.1"
+__version__ = "0.6.10"
 from .core import *
-from .authmw import *
-from .components import *
-from .xtend import *
-from .live_reload import *

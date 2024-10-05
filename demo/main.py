@@ -6,15 +6,18 @@ def render(item:'Todo'):
     return Li(item.title, dellink, id=id)
 
 auth = user_pwd_auth(user='s3kret', skip=[r'/favicon\.ico', r'/static/.*', r'.*\.css'])
-app,todos,Todo = fast_app(
+app,rt,todos,Todo = fast_app(
     'data/tbl.db', middleware=[auth], render=render,
     id=int, title=str, pk='id')
-rt = app.route
 
 @rt("/")
 async def get(request):
-    new_frm = Form(Group(Input(name='title', placeholder='Title'),
-                         Button('Add')), hx_post='/', target_id='todo-list', hx_swap='beforeend')
+    new_frm = Form(hx_post='/', target_id='todo-list', hx_swap='beforeend')(
+        Group(
+            Input(name='title', placeholder='Title'),
+            Button('Add')
+        )
+    )
     items = Ul(*todos(), id='todo-list')
     logout = A('logout', href=basic_logout(request))
     return Titled('Todo list', new_frm, items, logout)
@@ -25,5 +28,4 @@ async def post(todo:Todo): return todos.insert(todo)
 @rt("/todo/{id}")
 async def delete(id:int): todos.delete(id)
 
-run_uv()
-
+serve()

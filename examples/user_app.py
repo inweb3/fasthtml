@@ -1,11 +1,12 @@
+# Run with: python user_app.py
+# At signin, enter a user/pw combination and if it doesn't exist, it will be created.
 from fasthtml.common import *
 
 db = database('data/utodos.db')
-todos,users = db.t.todos,db.t.users
-if todos not in db.t:
-    users.create(name=str, pwd=str, pk='name')
-    todos.create(id=int, title=str, done=bool, name=str, details=str, pk='id')
-Todo,User = todos.dataclass(),users.dataclass()
+class User: name:str; pwd:str
+class Todo: id:int; title:str; done:bool; name:str; details:str
+users = db.create(User, pk='name')
+todos = db.create(Todo)
 
 id_curr = 'current-todo'
 def tid(id): return f'todo-{id}'
@@ -25,10 +26,10 @@ app = FastHTML(middleware=[authmw], before=before,
 rt = app.route
 
 @rt("/{fname:path}.{ext:static}")
-async def get(fname:str, ext:str): return FileResponse(f'{fname}.{ext}')
+def get(fname:str, ext:str): return FileResponse(f'{fname}.{ext}')
 
 @patch
-def __xt__(self:Todo):
+def __ft__(self:Todo):
     show = AX(self.title, f'/todos/{self.id}', id_curr)
     edit = AX('edit',     f'/edit/{self.id}' , id_curr)
     dt = '✅ ' if self.done else ''
@@ -38,38 +39,40 @@ def mk_input(**kw): return Input(id="new-title", name="title", placeholder="New 
 def clr_details(): return Div(hx_swap_oob='innerHTML', id=id_curr)
 
 @rt("/")
-async def get(request, auth):
+def get(request, auth):
     add = Form(Group(mk_input(), Button("Add")),
                hx_post="/", target_id='todo-list', hx_swap="beforeend")
     card = Card(Ul(*todos(), id='todo-list'),
                 header=add, footer=Div(id=id_curr)),
-    title = 'Todo list'
-    top = Grid(H1(f"{auth}'s {title}"), Div(A('logout', href=basic_logout(request)), style='text-align: right'))
-    return Titled(title, top, card)
+    top = Grid(Div(A('logout', href=basic_logout(request)), style='text-align: right'))
+    return Titled(f"{auth}'s todo list", top, card)
 
 @rt("/todos/{id}")
-async def delete(id:int):
+def delete(id:int):
     todos.delete(id)
     return clr_details()
 
 @rt("/")
-async def post(todo:Todo):
+def post(todo:Todo):
     return todos.insert(todo), mk_input(hx_swap_oob='true')
 
 @rt("/edit/{id}")
-async def get(id:int):
+def get(id:int):
     res = Form(Group(Input(id="title"), Button("Save")),
-        Hidden(id="id"), Checkbox(id="done", label='Done'),
+        Hidden(id="id"), CheckboxX(id="done", label='Done'),
         hx_put="/", target_id=tid(id), id="edit")
     return fill_form(res, todos[id])
 
 @rt("/")
-async def put(todo: Todo):
+def put(todo: Todo):
     return todos.upsert(todo), clr_details()
 
 @rt("/todos/{id}")
-async def get(id:int):
+def get(id:int):
     todo = todos[id]
     btn = Button('delete', hx_delete=f'/todos/{todo.id}',
                  target_id=tid(todo.id), hx_swap="outerHTML")
     return Div(Div(todo.title), btn)
+
+serve()
+
