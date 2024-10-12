@@ -4,11 +4,10 @@
 
 # %% auto 0
 __all__ = ['empty', 'htmx_hdrs', 'fh_cfg', 'htmx_resps', 'htmxsrc', 'htmxwssrc', 'fhjsscr', 'htmxctsrc', 'surrsrc', 'scopesrc',
-           'viewport', 'charset', 'all_meths', 'parsed_date', 'snake2hyphens', 'HtmxHeaders', 'str2int', 'str2date',
-           'HttpHeader', 'HtmxResponseHeaders', 'form2dict', 'parse_form', 'flat_xt', 'Beforeware', 'EventStream',
-           'signal_shutdown', 'WS_RouteX', 'uri', 'decode_uri', 'flat_tuple', 'Redirect', 'RouteX', 'RouterX',
-           'get_key', 'def_hdrs', 'FastHTML', 'serve', 'Client', 'cookie', 'reg_re_param', 'MiddlewareBase',
-           'FtResponse']
+           'viewport', 'charset', 'all_meths', 'parsed_date', 'snake2hyphens', 'HtmxHeaders', 'HttpHeader',
+           'HtmxResponseHeaders', 'form2dict', 'parse_form', 'flat_xt', 'Beforeware', 'EventStream', 'signal_shutdown',
+           'WS_RouteX', 'uri', 'decode_uri', 'flat_tuple', 'Redirect', 'RouteX', 'RouterX', 'get_key', 'def_hdrs',
+           'FastHTML', 'serve', 'Client', 'cookie', 'reg_re_param', 'MiddlewareBase', 'FtResponse']
 
 # %% ../nbs/api/00_core.ipynb
 import json,uuid,inspect,types,uvicorn,signal,asyncio,threading
@@ -72,23 +71,10 @@ def _get_htmx(h):
     return HtmxHeaders(**res)
 
 # %% ../nbs/api/00_core.ipynb
-def str2int(s)->int:
-    "Convert `s` to an `int`"
-    s = s.lower()
-    if s=='on': return 1
-    if s=='none': return 0
-    return 0 if not s else int(s)
-
-# %% ../nbs/api/00_core.ipynb
 def _mk_list(t, v): return [t(o) for o in v]
 
 # %% ../nbs/api/00_core.ipynb
 fh_cfg = AttrDict(indent=True)
-
-# %% ../nbs/api/00_core.ipynb
-def str2date(s:str)->date:
-    "`date.fromisoformat` with empty string handling"
-    return date.fromisoformat(s) if s else None
 
 # %% ../nbs/api/00_core.ipynb
 def _fix_anno(t):
@@ -96,7 +82,7 @@ def _fix_anno(t):
     origin = get_origin(t)
     if origin is Union or origin is UnionType or origin in (list,List):
         t = first(o for o in get_args(t) if o!=type(None))
-    d = {bool: str2bool, int: str2int, date: str2date}
+    d = {bool: str2bool, int: str2int, date: str2date, UploadFile: noop}
     res = d.get(t, t)
     if origin in (list,List): return partial(_mk_list, res)
     return lambda o: res(o[-1]) if isinstance(o,(list,tuple)) else res(o)
@@ -382,17 +368,20 @@ def _xt_cts(req, resp):
     resp = resp + tuple(getattr(req, 'injects', ()))
     http_hdrs,resp = partition(resp, risinstance(HttpHeader))
     http_hdrs = {o.k:str(o.v) for o in http_hdrs}
+    tasks,resp = partition(resp, risinstance(BackgroundTask))
+    ts = BackgroundTasks()
+    for t in tasks: ts.tasks.append(t)
     hdr_tags = 'title','meta','link','style','base'
     titles,bdy = partition(resp, lambda o: getattr(o, 'tag', '') in hdr_tags)
     if resp and 'hx-request' not in req.headers and not any(getattr(o, 'tag', '')=='html' for o in resp):
         if not titles: titles = [Title('FastHTML page')]
         resp = Html(Head(*titles, *flat_xt(req.hdrs)), Body(bdy, *flat_xt(req.ftrs), **req.bodykw), **req.htmlkw)
-    return _to_xml(req, resp, indent=fh_cfg.indent), http_hdrs
+    return _to_xml(req, resp, indent=fh_cfg.indent), http_hdrs, ts
 
 # %% ../nbs/api/00_core.ipynb
 def _xt_resp(req, resp):
-    cts,http_hdrs = _xt_cts(req, resp)
-    return HTMLResponse(cts, headers=http_hdrs)
+    cts,http_hdrs,tasks = _xt_cts(req, resp)
+    return HTMLResponse(cts, headers=http_hdrs, background=tasks)
 
 # %% ../nbs/api/00_core.ipynb
 def _is_ft_resp(resp): return isinstance(resp, (list,tuple,HttpHeader,FT)) or hasattr(resp, '__ft__')
@@ -666,11 +655,11 @@ class MiddlewareBase:
 # %% ../nbs/api/00_core.ipynb
 class FtResponse:
     "Wrap an FT response with any Starlette `Response`"
-    def __init__(self, content, status_code:int=200, headers=None, cls=HTMLResponse, media_type:str|None=None, background=None):
+    def __init__(self, content, status_code:int=200, headers=None, cls=HTMLResponse, media_type:str|None=None):
         self.content,self.status_code,self.headers = content,status_code,headers
-        self.cls,self.media_type,self.background = cls,media_type,background
+        self.cls,self.media_type = cls,media_type
     
     def __response__(self, req):
-        cts,httphdrs = _xt_cts(req, self.content)
+        cts,httphdrs,tasks = _xt_cts(req, self.content)
         headers = {**(self.headers or {}), **httphdrs}
-        return self.cls(cts, status_code=self.status_code, headers=headers, media_type=self.media_type, background=self.background)
+        return self.cls(cts, status_code=self.status_code, headers=headers, media_type=self.media_type, background=tasks)
